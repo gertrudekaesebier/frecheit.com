@@ -15,9 +15,6 @@
             height: 100%;
             width: 100%;
             overflow: hidden;
-        }
-
-        body {
             background-color: #1f2128;
         }
 
@@ -74,24 +71,78 @@
 
         #controls {
             position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(26, 29, 36, 0.9);
-            border: 2px solid rgba(211, 255, 25, 0.3);
-            border-radius: 12px;
-            padding: 20px;
-            min-width: 250px;
-            max-width: 300px;
-            backdrop-filter: blur(10px);
+            top: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            max-width: 100%;
+            background: rgba(26, 29, 36, 0.6);
+            border: none;
+            border-bottom: 2px solid rgba(211, 255, 25, 0.3);
+            border-radius: 0 0 20px 20px;
+            padding: 12px;
+            padding-top: 40px;
+            backdrop-filter: blur(5px);
             z-index: 100;
             color: #d3ff19;
             font-family: Arial, sans-serif;
-            font-size: 14px;
-            display: none;
+            font-size: 11px;
+            transition: none;
+            overflow-y: auto;
+            max-height: 33vh;
+            transform: translateY(-100vh);
+        }
+
+        #controlsHandle {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 50px;
+            height: 32px;
+            background: rgba(26, 29, 36, 0.6);
+            border: 2px solid rgba(211, 255, 25, 0.3);
+            border-top: none;
+            border-radius: 0 0 10px 10px;
+            cursor: grab;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            touch-action: none;
+        }
+
+        #controlsHandle:active {
+            cursor: grabbing;
+        }
+
+        #controlsHandle::after {
+            content: '';
+            width: 30px;
+            height: 3px;
+            background: rgba(211, 255, 25, 0.5);
+            border-radius: 2px;
+        }
+
+        #topDragArea {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 20px;
+            z-index: 101;
+            cursor: grab;
+            touch-action: none;
+        }
+
+        #topDragArea:active {
+            cursor: grabbing;
         }
 
         .control-group {
-            margin-bottom: 16px;
+            margin-bottom: 12px;
+            background: rgba(26, 29, 36, 0.4);
+            padding: 10px;
+            border-radius: 8px;
         }
 
         .control-group:last-child {
@@ -101,8 +152,8 @@
         .control-label {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 12px;
+            margin-bottom: 6px;
+            font-size: 10px;
         }
 
         .control-value {
@@ -143,19 +194,22 @@
 
         @media (max-width: 768px) {
             #controls {
-                top: 10px;
-                right: 10px;
-                left: 10px;
-                max-width: none;
-                padding: 16px;
-                font-size: 12px;
+                padding: 10px;
+                padding-top: 36px;
+                font-size: 10px;
+            }
+            
+            .control-label {
+                font-size: 9px;
             }
         }
     </style>
 </head>
 <body>
     <input type="text" id="textInput" placeholder="Enter text..." />
+    <div id="topDragArea"></div>
     <div id="controls">
+        <div id="controlsHandle"></div>
         <div class="control-group">
             <div class="control-label">
                 <span>Emissive Intensity</span>
@@ -218,6 +272,13 @@
                 <span class="control-value" id="ambientValue">0.3</span>
             </div>
             <input type="range" class="slider" id="ambientSlider" min="0" max="1" step="0.05" value="0.3">
+        </div>
+        <div class="control-group">
+            <div class="control-label">
+                <span>Text Size Multiplier</span>
+                <span class="control-value" id="textSizeMultiplierValue">1.45</span>
+            </div>
+            <input type="range" class="slider" id="textSizeMultiplierSlider" min="0.5" max="2.0" step="0.05" value="1.45">
         </div>
     </div>
     <script type="importmap">
@@ -380,8 +441,73 @@
             ambientValue.textContent = value.toFixed(2);
         });
 
+        // Text size multiplier
+        let textSizeMultiplier = 1.45;
+        const textSizeMultiplierSlider = document.getElementById('textSizeMultiplierSlider');
+        const textSizeMultiplierValue = document.getElementById('textSizeMultiplierValue');
+        textSizeMultiplierSlider.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            textSizeMultiplier = value;
+            textSizeMultiplierValue.textContent = value.toFixed(2);
+            
+            // Recalculate text size if text exists
+            if (loadedFont && textMesh) {
+                const input = document.getElementById('textInput');
+                const currentText = input.value || 'frecheit.com';
+                createTextMesh(currentText);
+            }
+        });
+
         let textMesh = null;
         let loadedFont = null;
+
+        // Function to calculate text size based on window dimensions
+        function calculateTextSize(text) {
+            // Always calculate size based on "frecheit.com" regardless of actual text
+            const referenceText = "frecheit.com";
+            
+            const windowWidth = window.innerWidth;
+            const windowHeight = window.innerHeight;
+            const isMobile = windowWidth < 768;
+            const cameraZ = 5;
+            const cameraFOV = 75;
+            
+            // Account for input field at bottom and padding
+            const availableHeight = windowHeight - (isMobile ? 100 : 80);
+            const availableWidth = windowWidth - (isMobile ? 40 : 60);
+            
+            // Convert screen pixels to world units at camera distance
+            // Visible width in world units = 2 * distance * tan(FOV/2)
+            const fovRad = (cameraFOV * Math.PI) / 180;
+            const aspect = windowWidth / windowHeight;
+            const visibleWorldHeight = 2 * cameraZ * Math.tan(fovRad / 2);
+            const visibleWorldWidth = visibleWorldHeight * aspect;
+            
+            // Convert available screen space to world units
+            const worldWidth = (availableWidth / windowWidth) * visibleWorldWidth;
+            const worldHeight = (availableHeight / windowHeight) * visibleWorldHeight;
+            
+            // Account for spaces - each letter gets a space after it
+            const spacedCharCount = referenceText.length * 2 - 1; // letters + spaces
+            
+            // Estimate: each character with space takes approximately 0.7 * size units (more conservative)
+            // We want: spacedCharCount * 0.7 * size <= worldWidth
+            // So: size <= worldWidth / (spacedCharCount * 0.7)
+            const widthBasedSize = (worldWidth / (spacedCharCount * 0.7)) * 0.85; // 0.85 safety margin (increased by ~30%)
+            
+            // Height constraint: text height should be less than available world height
+            // Text height is roughly 1.0 * size (for most fonts)
+            const heightBasedSize = worldHeight * 0.9; // 0.9 safety margin (increased)
+            
+            // Use the smaller of the two to ensure text fits both dimensions
+            const calculatedSize = Math.min(widthBasedSize, heightBasedSize);
+            
+            // Apply text size multiplier
+            const finalSize = calculatedSize * textSizeMultiplier;
+            
+            // Clamp between reasonable min/max values
+            return Math.max(0.1, Math.min(0.65, finalSize));
+        }
 
         // Function to create or update text mesh
         function createTextMesh(text) {
@@ -400,15 +526,18 @@
             // Add space between each letter
             const spacedText = text.split('').join(' ');
 
+            // Calculate text size based on window dimensions
+            const textSize = calculateTextSize(text);
+
             // Create new text geometry
             const textGeometry = new TextGeometry(spacedText, {
                 font: loadedFont,
-                size: 0.5,
-                height: 0.4,
+                size: textSize,
+                height: textSize * 0.8,  // Height proportional to size
                 curveSegments: 16,
                 bevelEnabled: true,
-                bevelThickness: 0.05,
-                bevelSize: 0.04,
+                bevelThickness: textSize * 0.1,  // Bevel proportional to size
+                bevelSize: textSize * 0.08,
                 bevelOffset: 0,
                 bevelSegments: 8
             });
@@ -446,6 +575,276 @@
             }, 300);
         });
 
+        // Controls panel slide functionality
+        const controls = document.getElementById('controls');
+        const controlsHandle = document.getElementById('controlsHandle');
+        const topDragArea = document.getElementById('topDragArea');
+        let isDragging = false;
+        let startY = 0;
+        let startTranslate = 0;
+        let lastDeltaY = 0;
+        let dragStartedOutside = false;
+        let dragStartedFromHandle = false;
+        let hasDragged = false;
+
+        function getPanelHeight() {
+            // Get the natural height of the panel (when not transformed)
+            // We know max-height is 33vh, so calculate directly from viewport
+            // This is the maximum visible height the panel can have
+            return (33 / 100) * window.innerHeight;
+        }
+
+        function isPointInsidePanel(x, y) {
+            const rect = controls.getBoundingClientRect();
+            return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+        }
+
+        function updatePanelTransform(y) {
+            const panelHeight = getPanelHeight();
+            // Allow dragging from -100% (fully hidden) to 0 (fully visible)
+            const translateY = Math.max(-panelHeight, Math.min(0, y));
+            controls.style.transform = `translateY(${translateY}px)`;
+            controls.style.transition = isDragging ? 'none' : 'transform 0.3s ease-out';
+        }
+
+        function getCurrentTranslate() {
+            // Always check inline style first (what we set via JavaScript)
+            const transform = controls.style.transform;
+            const panelHeight = getPanelHeight();
+            
+            if (!transform || transform === 'none' || transform === '') {
+                return -panelHeight;
+            }
+            
+            const match = transform.match(/translateY\(([^)]+)\)/);
+            if (!match) return -panelHeight;
+            
+            const value = match[1].trim();
+            // Handle pixel values (what we always set)
+            const pixelValue = parseFloat(value);
+            if (!isNaN(pixelValue)) {
+                return pixelValue;
+            }
+            
+            // Fallback for percentage (shouldn't happen, but just in case)
+            if (value.includes('%')) {
+                const percent = parseFloat(value);
+                return (percent / 100) * panelHeight;
+            }
+            
+            return -panelHeight;
+        }
+
+        function handleStart(e) {
+            // Don't start drag if clicking on interactive elements
+            const target = e.target;
+            if (target.closest('input') || 
+                target.closest('button') || 
+                target.closest('.slider') || 
+                target.closest('.control-group') ||
+                target.closest('label') ||
+                target.tagName === 'INPUT' ||
+                target.tagName === 'BUTTON' ||
+                target.tagName === 'LABEL') {
+                return; // Don't start drag
+            }
+            
+            // Check if drag started from handle or topDragArea
+            dragStartedFromHandle = (target === controlsHandle || target === topDragArea || 
+                                     target.closest('#controlsHandle') || target.closest('#topDragArea'));
+            
+            const startX = e.touches ? e.touches[0].clientX : e.clientX;
+            const startYPos = e.touches ? e.touches[0].clientY : e.clientY;
+            
+            // Check if drag started outside the panel
+            dragStartedOutside = !isPointInsidePanel(startX, startYPos);
+            
+            isDragging = true;
+            startY = startYPos;
+            startTranslate = getCurrentTranslate();
+            lastDeltaY = 0; // Reset drag direction
+            hasDragged = false; // Reset drag flag
+            controls.style.transition = 'none';
+        }
+
+        function handleMove(e) {
+            if (!isDragging) return;
+            
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            const deltaY = clientY - startY;
+            
+            // Mark as dragged if movement is significant
+            if (Math.abs(deltaY) > 5) {
+                hasDragged = true;
+            }
+            
+            // Only prevent default if drag started outside panel or from handle (we're dragging the panel)
+            // If drag started inside panel content, allow normal scrolling
+            if (dragStartedOutside || dragStartedFromHandle) {
+                e.preventDefault();
+            }
+            
+            lastDeltaY = deltaY; // Track drag direction
+            
+            // Update panel transform if drag started outside or from handle
+            if (dragStartedOutside || dragStartedFromHandle) {
+                updatePanelTransform(startTranslate + deltaY);
+            }
+        }
+
+        function handleEnd(e) {
+            if (!isDragging) return;
+            isDragging = false;
+            const panelHeight = getPanelHeight();
+            const currentTranslate = getCurrentTranslate();
+            
+            // If drag started from handle, use normal open/close logic
+            if (dragStartedFromHandle) {
+                // If it was just a tap (no drag), toggle close
+                if (!hasDragged) {
+                    // Just a tap - close if open, open if closed
+                    if (currentTranslate > -panelHeight + 10) {
+                        updatePanelTransform(-panelHeight);
+                    } else {
+                        updatePanelTransform(0);
+                    }
+                } else if (lastDeltaY < -20) {
+                    // Dragged up - close it
+                    updatePanelTransform(-panelHeight);
+                } else if (lastDeltaY > 20) {
+                    // Dragged down - open it
+                    updatePanelTransform(0);
+                } else {
+                    // Small movement - use position
+                    if (currentTranslate > -panelHeight * 0.8) {
+                        updatePanelTransform(0);
+                    } else {
+                        updatePanelTransform(-panelHeight);
+                    }
+                }
+                return;
+            }
+            
+            // For drags starting outside panel: only close if drag started OUTSIDE, ended INSIDE, and was dragged UP
+            const endX = e && (e.changedTouches ? e.changedTouches[0].clientX : e.clientX);
+            const endY = e && (e.changedTouches ? e.changedTouches[0].clientY : e.clientY);
+            const dragEndedInside = endX !== undefined && endY !== undefined && isPointInsidePanel(endX, endY);
+            
+            if (dragStartedOutside && dragEndedInside && lastDeltaY < -20) {
+                // Close the panel (started outside, ended inside, dragged up)
+                updatePanelTransform(-panelHeight);
+            } else if (lastDeltaY > 20) {
+                // Dragging down - open it
+                updatePanelTransform(0);
+            } else {
+                // Small movement - use position-based logic
+                if (currentTranslate > -panelHeight * 0.8) {
+                    updatePanelTransform(0); // Fully open
+                } else {
+                    updatePanelTransform(-panelHeight); // Fully hidden
+                }
+            }
+        }
+
+        // Touch events
+        controlsHandle.addEventListener('touchstart', handleStart, { passive: false });
+        topDragArea.addEventListener('touchstart', handleStart, { passive: false });
+        document.addEventListener('touchmove', handleMove, { passive: false });
+        document.addEventListener('touchend', handleEnd);
+
+        // Mouse events - handle and top drag area
+        controlsHandle.addEventListener('mousedown', handleStart);
+        topDragArea.addEventListener('mousedown', handleStart);
+        document.addEventListener('mousemove', handleMove);
+        document.addEventListener('mouseup', handleEnd);
+        
+        // Click handler to close panel when handle is clicked (without dragging)
+        controlsHandle.addEventListener('click', (e) => {
+            // Prevent click if there was a drag
+            if (hasDragged) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            // Close the panel
+            const panelHeight = getPanelHeight();
+            const currentTranslate = getCurrentTranslate();
+            if (currentTranslate > -panelHeight + 10) {
+                updatePanelTransform(-panelHeight);
+            }
+        });
+        
+        // Touch click handler - check in handleEnd instead
+        // We'll handle it in handleEnd by checking if it was just a tap
+        
+        // Also allow dragging from outside the panel (for closing)
+        // Only start if clicking outside the panel and panel is visible
+        document.addEventListener('mousedown', (e) => {
+            const target = e.target;
+            // Don't interfere if clicking on handle or topDragArea (already handled)
+            if (target === controlsHandle || target === topDragArea || 
+                target.closest('#controlsHandle') || target.closest('#topDragArea')) {
+                return;
+            }
+            
+            // Check if panel is visible (not completely hidden)
+            const currentTranslate = getCurrentTranslate();
+            const panelHeight = getPanelHeight();
+            const isPanelVisible = currentTranslate > -panelHeight + 10; // At least 10px visible
+            
+            if (!isPanelVisible) {
+                return; // Panel is hidden, don't start drag
+            }
+            
+            // Don't start if clicking inside panel (let normal scrolling work)
+            const rect = controls.getBoundingClientRect();
+            const clickY = e.clientY;
+            if (rect.top >= 0 && clickY >= rect.top && clickY <= rect.bottom) {
+                return; // Inside panel, don't interfere
+            }
+            // Start drag from outside
+            handleStart(e);
+        });
+        
+        document.addEventListener('touchstart', (e) => {
+            const target = e.target;
+            // Don't interfere if touching handle or topDragArea
+            if (target === controlsHandle || target === topDragArea || 
+                target.closest('#controlsHandle') || target.closest('#topDragArea')) {
+                return;
+            }
+            
+            // Check if panel is visible
+            const currentTranslate = getCurrentTranslate();
+            const panelHeight = getPanelHeight();
+            const isPanelVisible = currentTranslate > -panelHeight + 10;
+            
+            if (!isPanelVisible) {
+                return; // Panel is hidden, don't start drag
+            }
+            
+            // Don't start if touching inside panel
+            const rect = controls.getBoundingClientRect();
+            const touchY = e.touches[0].clientY;
+            if (rect.top >= 0 && touchY >= rect.top && touchY <= rect.bottom) {
+                return; // Inside panel, don't interfere
+            }
+            // Start drag from outside
+            handleStart(e);
+        }, { passive: false });
+
+        // Initial position (fully hidden) - wait for layout
+        setTimeout(() => {
+            const panelHeight = getPanelHeight();
+            // Set position without transition to prevent animation on load
+            controls.style.transition = 'none';
+            controls.style.transform = `translateY(${-panelHeight}px)`;
+            // Enable transition after positioning is set
+            setTimeout(() => {
+                controls.style.transition = 'transform 0.3s ease-out';
+            }, 10);
+        }, 100);
+
         // Animation loop
         function animate() {
             requestAnimationFrame(animate);
@@ -460,12 +859,24 @@
         animate();
 
         // Handle window resize
+        let resizeTimeout = null;
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
             composer.setSize(window.innerWidth, window.innerHeight);
             bloomPass.setSize(window.innerWidth, window.innerHeight);
+            
+            // Debounce text recalculation
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                // Recalculate text size and recreate mesh if text exists
+                if (loadedFont) {
+                    const input = document.getElementById('textInput');
+                    const currentText = input.value || 'frecheit.com';
+                    createTextMesh(currentText);
+                }
+            }, 100);
         });
     </script>
 </body>
