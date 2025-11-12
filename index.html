@@ -1,9 +1,13 @@
 <!DOCTYPE html>
+<!-- Version: 1.0.0 - Update this number when deploying changes -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Centered Text</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>frecheit.com</title>
     <style>
         * {
             margin: 0;
@@ -90,7 +94,7 @@
             transition: none;
             overflow-y: auto;
             max-height: 33vh;
-            transform: translateY(-100vh);
+            transform: translateY(calc(-100vh - 50vh));
         }
 
         #controlsHandle {
@@ -314,6 +318,8 @@
 
         // Renderer with proper settings for physical materials
         const renderer = new THREE.WebGLRenderer({ antialias: true });
+        // Set pixel ratio for high-DPI displays (retina, etc.) to prevent pixelation
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap at 2 for performance
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -453,7 +459,7 @@
             // Recalculate text size if text exists
             if (loadedFont && textMesh) {
                 const input = document.getElementById('textInput');
-                const currentText = input.value || 'frecheit.com';
+                const currentText = input.value || initialText;
                 createTextMesh(currentText);
             }
         });
@@ -553,25 +559,44 @@
             scene.add(textMesh);
         }
 
+        // Get initial text from URL query parameter (before font loads)
+        const urlParams = new URLSearchParams(window.location.search);
+        const initialTextFromUrl = urlParams.get('text');
+        const initialText = initialTextFromUrl ? decodeURIComponent(initialTextFromUrl) : 'frecheit.com';
+        
         // Load font and create initial text
         const loader = new FontLoader();
         loader.load(
             'https://threejs.org/examples/fonts/helvetiker_regular.typeface.json',
             (font) => {
                 loadedFont = font;
-                const input = document.getElementById('textInput');
-                createTextMesh(input.value || 'frecheit.com');
+                // Use initialText from URL or default, but don't use input.value
+                createTextMesh(initialText);
             }
         );
 
         // Connect input field to text update
         const textInput = document.getElementById('textInput');
         let updateTimeout = null;
+        
+        // Keep input field empty to encourage typing (even if URL has text)
+        textInput.value = '';
+        
         textInput.addEventListener('input', (e) => {
             clearTimeout(updateTimeout);
             // Debounce updates for better performance
             updateTimeout = setTimeout(() => {
-                createTextMesh(e.target.value);
+                const newText = e.target.value || initialText;
+                createTextMesh(newText);
+                
+                // Update URL query parameter without page reload
+                const newUrl = new URL(window.location);
+                if (e.target.value && e.target.value.trim() !== '') {
+                    newUrl.searchParams.set('text', encodeURIComponent(e.target.value));
+                } else {
+                    newUrl.searchParams.delete('text');
+                }
+                window.history.pushState({}, '', newUrl);
             }, 300);
         });
 
@@ -601,8 +626,11 @@
 
         function updatePanelTransform(y) {
             const panelHeight = getPanelHeight();
+            // Add LARGE extra offset to ensure panel is completely hidden (account for borders, padding, rounding, any edge cases)
+            // Use at least 100px or 50% of viewport height, whichever is larger
+            const extraOffset = Math.max(100, window.innerHeight * 0.5);
             // Allow dragging from -100% (fully hidden) to 0 (fully visible)
-            const translateY = Math.max(-panelHeight, Math.min(0, y));
+            const translateY = Math.max(-panelHeight - extraOffset, Math.min(0, y));
             controls.style.transform = `translateY(${translateY}px)`;
             controls.style.transition = isDragging ? 'none' : 'transform 0.3s ease-out';
         }
@@ -836,9 +864,11 @@
         // Initial position (fully hidden) - wait for layout
         setTimeout(() => {
             const panelHeight = getPanelHeight();
+            // Use at least 100px or 50% of viewport height, whichever is larger
+            const extraOffset = Math.max(100, window.innerHeight * 0.5);
             // Set position without transition to prevent animation on load
             controls.style.transition = 'none';
-            controls.style.transform = `translateY(${-panelHeight}px)`;
+            controls.style.transform = `translateY(${-panelHeight - extraOffset}px)`;
             // Enable transition after positioning is set
             setTimeout(() => {
                 controls.style.transition = 'transform 0.3s ease-out';
@@ -873,7 +903,7 @@
                 // Recalculate text size and recreate mesh if text exists
                 if (loadedFont) {
                     const input = document.getElementById('textInput');
-                    const currentText = input.value || 'frecheit.com';
+                    const currentText = input.value || initialText;
                     createTextMesh(currentText);
                 }
             }, 100);
